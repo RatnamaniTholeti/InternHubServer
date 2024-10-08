@@ -1,7 +1,7 @@
-// controllers/authController.js
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const axios = require('axios');
 
 // Admin credentials (hardcoded)
 const adminCredentials = {
@@ -11,11 +11,11 @@ const adminCredentials = {
 
 // Login handler
 exports.login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body; // Ensure role is also being passed
 
     try {
         // Hardcoded Admin login
-        if (email === adminCredentials.email) {
+        if (role === 'admin' && email === adminCredentials.email) {
             if (password === adminCredentials.password) {
                 const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '1h' });
                 return res.json({ token, role: 'admin' });
@@ -24,29 +24,69 @@ exports.login = async (req, res) => {
             }
         }
 
-        // Manager/Intern login from database
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        // For Managers, fetch data from the manager API
+        if (role === 'manager') {
+            const response = await axios.get('https://internhub-server-final1.vercel.app/api/managers');
+            const managers = response.data;
+
+            // Check if the email and password match any manager
+            const manager = managers.find(m => m.email === email);
+            if (!manager) {
+                return res.status(400).json({ message: 'Invalid credentials' });
+            }
+
+            // Compare passwords
+            const isMatch = await bcrypt.compare(password, manager.password);
+            if (!isMatch) {
+                return res.status(400).json({ message: 'Invalid credentials' });
+            }
+
+            // Create JWT payload for the manager
+            const payload = {
+                user: {
+                    id: manager._id,
+                    role: 'manager',
+                },
+            };
+
+            // Sign token
+            const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+            return res.json({ token, role: 'manager' });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+        // For Interns, fetch data from the intern API
+        if (role === 'intern') {
+            const response = await axios.get('https://internhub-server-final1.vercel.app/api/interns'); // Update the API endpoint accordingly
+            const interns = response.data;
+
+            // Check if the email and password match any intern
+            const intern = interns.find(i => i.email === email);
+            if (!intern) {
+                return res.status(400).json({ message: 'Invalid credentials' });
+            }
+
+            // Compare passwords
+            const isMatch = await bcrypt.compare(password, intern.password);
+            if (!isMatch) {
+                return res.status(400).json({ message: 'Invalid credentials' });
+            }
+
+            // Create JWT payload for the intern
+            const payload = {
+                user: {
+                    id: intern._id,
+                    role: 'intern',
+                },
+            };
+
+            // Sign token
+            const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+            return res.json({ token, role: 'intern' });
         }
 
-        // Create JWT payload
-        const payload = {
-            user: {
-                id: user.id,
-                role: user.role,
-            },
-        };
+        // If role is not recognized
+        return res.status(400).json({ message: 'Role is not valid.' });
 
-        // Sign token
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-        res.json({ token, role: user.role });
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server error');
@@ -68,7 +108,17 @@ exports.createUser = async (req, res) => {
             return res.status(400).json({ message: 'User already exists' });
         }
 
-        user = new User({ email, password, role });
+        // Hash the password before saving it to the database
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Create new user with hashed password
+        user = new User({
+            email,
+            password: hashedPassword,
+            role,
+        });
+
         await user.save();
 
         res.status(201).json({ message: `${role} account created successfully` });
