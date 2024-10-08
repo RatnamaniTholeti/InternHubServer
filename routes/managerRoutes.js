@@ -19,4 +19,17 @@ router.delete('/:id', deleteManager);
 // @desc    Update a manager by ID
 router.put('/:id', updateManager);
 
+router.get('/:id', auth, async (req, res) => {
+    try {
+      const manager = await Manager.findById(req.params.id);
+      if (!manager) {
+        return res.status(404).json({ message: 'Manager not found' });
+      }
+      res.json(manager);
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
+    }
+  });
+
 module.exports = router;
