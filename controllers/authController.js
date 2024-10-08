@@ -35,7 +35,7 @@ exports.login = async (req, res) => {
                 return res.status(400).json({ message: 'Invalid credentials' });
             }
 
-            // Compare passwords
+            // Compare passwords (using bcrypt for hashing, if necessary)
             const isMatch = await bcrypt.compare(password, manager.password);
             if (!isMatch) {
                 return res.status(400).json({ message: 'Invalid credentials' });
@@ -65,9 +65,8 @@ exports.login = async (req, res) => {
                 return res.status(400).json({ message: 'Invalid credentials' });
             }
 
-            // Compare passwords
-            const isMatch = await bcrypt.compare(password, intern.password);
-            if (!isMatch) {
+            // Compare plaintext password directly
+            if (intern.password !== password) {
                 return res.status(400).json({ message: 'Invalid credentials' });
             }
 
